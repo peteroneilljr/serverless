@@ -25,7 +25,7 @@ resource "aws_s3_bucket_public_access_block" "serverless" {
   block_public_policy = false
   restrict_public_buckets = false
 }
-resource "aws_s3_bucket_policy" "b" {
+resource "aws_s3_bucket_policy" "serverless" {
   bucket = aws_s3_bucket.serverless-transcode.id
 
   policy = <<POLICY
@@ -136,20 +136,14 @@ resource "aws_iam_role_policy_attachment" "elastictranscoder" {
 #################
 # Elastic Transcoder
 #################
-# resource "aws_elastictranscoder_pipeline" "serverless" {
-#   input_bucket = "${aws_s3_bucket.input_bucket.bucket}"
-#   name         = "${var.prefix}-serverless-pipeline"
-#   role         = "${aws_iam_role.test_role.arn}"
+resource "aws_elastictranscoder_pipeline" "serverless" {
+  name         = "${var.prefix}-serverless-pipeline"
 
-#   content_config {
-#     bucket        = "${aws_s3_bucket.content_bucket.bucket}"
-#     storage_class = "Standard"
-#   }
+  input_bucket = aws_s3_bucket.serverless-upload.bucket
+  output_bucket = aws_s3_bucket.serverless-transcode.bucket
 
-#   thumbnail_config {
-#     bucket        = "${aws_s3_bucket.thumb_bucket.bucket}"
-#     storage_class = "Standard"
-#   }
-# }
+  role         = aws_iam_role.transcoder.arn
+
+}
 
 
