@@ -49,10 +49,10 @@ POLICY
 }
   
 #################
-# IAM lambda role
+# IAM lambda transcoder role
 #################
 resource "aws_iam_role" "serverless_lambda" {
-  name = "${var.prefix}-role"
+  name = "${var.prefix}-lambda-transcoder-role"
   assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
 
   force_detach_policies = true
@@ -154,15 +154,16 @@ resource "aws_elastictranscoder_pipeline" "serverless" {
 
 }
 #################
-# Lambda Function
+# Lambda Function Lab 1
 #################
 resource "aws_lambda_function" "serverless_lambda" {
   filename      = "./docker/lab1/app/Lambda-Deployment.zip"
-  function_name = "${var.prefix}-lambda-function"
+  function_name = "${var.prefix}-transcode-video"
   role          = aws_iam_role.serverless_lambda.arn
   handler       = "index.handler"
 
-  source_code_hash = filebase64sha256("./docker/lab1/app/index.js")
+  # Zip is created after first run, so it will be uploaded twice.
+  source_code_hash = filebase64sha256( fileexists("./docker/lab1/app/Lambda-Deployment.zip") ? "./docker/lab1/app/Lambda-Deployment.zip" : "./docker/lab1/app/index.js" )
 
   runtime = "nodejs12.x"
   timeout = 30
@@ -256,4 +257,39 @@ resource "docker_container" "lambda_packager" {
 until [ -f ${abspath(local.lambda_packages[count.index])}/Lambda-Deployment.zip ] ; do sleep 2; echo zipping; done
 CMD
   }
+}
+#################
+# IAM lambda basic role
+#################
+resource "aws_iam_role" "lambda_basic" {
+  name = "${var.prefix}-basic-role"
+  assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
+
+  force_detach_policies = true
+}
+resource "aws_iam_role_policy_attachment" "lambda_basic_execute" {
+  role       = aws_iam_role.lambda_basic.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSLambdaExecute"
+}
+#################
+# Lambda Function Lab 3
+#################
+resource "aws_lambda_function" "serverless_lambda_3" {
+  filename      = "./docker/lab3/app/Lambda-Deployment.zip"
+  function_name = "${var.prefix}-user-profile"
+  role          = aws_iam_role.lambda_basic.arn
+  handler       = "index.handler"
+
+  # Zip is created after first run, so it will be uploaded twice.
+  source_code_hash = filebase64sha256( fileexists("./docker/lab3/app/Lambda-Deployment.zip") ? "./docker/lab3/app/Lambda-Deployment.zip" : "./docker/lab3/app/index.js" )
+
+  runtime = "nodejs12.x"
+  timeout = 30
+
+  environment {
+    variables = {
+      AUTH0_DOMAIN = var.AUTH0_DOMAIN
+    }
+  }
+  depends_on = [docker_container.lambda_packager]
 }
