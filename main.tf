@@ -157,12 +157,12 @@ resource "aws_elastictranscoder_pipeline" "serverless" {
 # Lambda Function
 #################
 resource "aws_lambda_function" "serverless_lambda" {
-  filename      = "./docker/lab1/Lambda-Deployment.zip"
+  filename      = "./docker/lab1/app/Lambda-Deployment.zip"
   function_name = "${var.prefix}-lambda-function"
   role          = aws_iam_role.serverless_lambda.arn
   handler       = "index.handler"
 
-  source_code_hash = filebase64sha256("./docker/lab1/Lambda-Deployment.zip")
+  source_code_hash = filebase64sha256("./docker/lab1/app/index.js")
 
   runtime = "nodejs12.x"
   timeout = 30
@@ -173,6 +173,7 @@ resource "aws_lambda_function" "serverless_lambda" {
       ELASTIC_TRANSCODER_PIPELINE_ID = aws_elastictranscoder_pipeline.serverless.id
     }
   }
+  depends_on = [docker_container.lambda_packager]
 }
 #################
 # Lambda Trigger
@@ -214,6 +215,45 @@ variable  "AUTH0_CLIENT_SECRET" {}
 provider "local" {}
 
 resource "local_file" "website_config" {
-    content     =  templatefile("./docker/lab2/js/config_template.js", { domain = var.AUTH0_DOMAIN, clientId = var.AUTH0_CLIENT_ID })
+    content     =  templatefile("./docker/lab2/app/js/config_template.js", { domain = var.AUTH0_DOMAIN, clientId = var.AUTH0_CLIENT_ID })
     filename = "./docker/lab2/js/config.js"
+}
+
+#################
+# Docker Provider to package node modules
+#################
+provider "docker" {}
+provider "null" {}
+
+resource "null_resource" "lambda_packager" {
+  triggers = {
+    cluster_instance_ids = filesha1("./docker/lambda_packager/Dockerfile")
+  }
+  provisioner "local-exec" {
+    command = "docker build -t lambda_packager ./docker/lambda_packager/"
+  }
+}
+locals {
+  lambda_packages = [
+    fileexists("./docker/lab1/app/Lambda-Deployment.zip") ? null :  "./docker/lab1/app",
+    fileexists("./docker/lab3/app/Lambda-Deployment.zip") ? null :  "./docker/lab3/app"
+  ]
+}
+
+resource "docker_container" "lambda_packager" {
+  count = length(compact(local.lambda_packages))
+  image = "lambda_packager"
+  name  = "lambda_packager${count.index}"
+  mounts {
+    type="bind"
+    source=abspath(local.lambda_packages[count.index])
+    target="/app"
+  }
+  start = true
+  depends_on = [null_resource.lambda_packager]
+  provisioner "local-exec" {
+    command =<<CMD
+until [ -f ${abspath(local.lambda_packages[count.index])}/Lambda-Deployment.zip ] ; do sleep 2; echo zipping; done
+CMD
+  }
 }
