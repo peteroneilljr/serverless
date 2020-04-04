@@ -136,8 +136,9 @@ override.tf.json
 # Ignoring turotial repository
 **/serverless-workshop/*
 serverless-workshop
-**/docker/*
-docker
+
+# **/docker/*
+# docker
 
 # Local mac files
 .DS_Store
