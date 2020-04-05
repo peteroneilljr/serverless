@@ -38,17 +38,16 @@ module "api_gateway_resource" {
     # }
   ]
 }
-data "aws_caller_identity" "current" {}
 
-resource "aws_lambda_permission" "allow_apigw_lambda" {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.serverless_lambda_3.function_name
-  principal     = "apigateway.amazonaws.com"
 
-  # More: http://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-control-access-using-iam-policies-to-invoke-api.html
-  source_arn = "arn:aws:execute-api:${var.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.serverless_api.id}/*/${module.api_gateway_resource.http_method[0]}${module.api_gateway_resource.path}"
+resource "aws_api_gateway_authorizer" "custom_auth" {
+  name                   = "custom-auth"
+  rest_api_id            = aws_api_gateway_rest_api.serverless_api.id
+  authorizer_uri         = aws_lambda_function.serverless_lambda_3a.invoke_arn
+  authorizer_credentials = aws_iam_role.authorizer.arn
 }
+
+data "aws_caller_identity" "current" {}
 
 resource "aws_api_gateway_deployment" "deploy" {
   depends_on = [module.api_gateway_resource]
