@@ -144,3 +144,5 @@ serverless-workshop
 .DS_Store
 
 # modules
+
+**/key.json

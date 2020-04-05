@@ -24,18 +24,18 @@ data "aws_iam_policy_document" "assume_elastictranscoder" {
 #################
 # IAM lambda transcoder role
 #################
-resource "aws_iam_role" "serverless_lambda" {
-  name = "${var.prefix}-lambda-transcoder-role"
+resource "aws_iam_role" "transcode_video" {
+  name = "${var.prefix}-video-transcoder-role"
   assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
 
   force_detach_policies = true
 }
 resource "aws_iam_role_policy_attachment" "lambda_execute" {
-  role       = aws_iam_role.serverless_lambda.name
+  role       = aws_iam_role.transcode_video.name
   policy_arn = "arn:aws:iam::aws:policy/AWSLambdaExecute"
 }
 resource "aws_iam_role_policy_attachment" "elastic_jobs_submitter" {
-  role       = aws_iam_role.serverless_lambda.name
+  role       = aws_iam_role.transcode_video.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonElasticTranscoder_JobsSubmitter"
 }
 #################
@@ -94,7 +94,7 @@ resource "aws_iam_role_policy_attachment" "elastictranscoder" {
   policy_arn = aws_iam_policy.elastictranscoder.arn
 }
 #################
-# IAM lambda basic role user profile
+# Lab 1 User profile basic execution role
 #################
 resource "aws_iam_role" "lambda_basic" {
   name = "${var.prefix}-basic-role"
@@ -107,7 +107,7 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execute" {
   policy_arn = "arn:aws:iam::aws:policy/AWSLambdaExecute"
 }
 #################
-# IAM lambda basic role 2 custom authorizer
+# Lab 3 Custom Authorizer basic execution role
 #################
 resource "aws_iam_role" "lambda_basic_2" {
   name = "${var.prefix}-basic-role2"
@@ -121,11 +121,13 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execute_2" {
 }
 
 #################
-# Custom Authorizor execution role
+# Lab 3 Custom Authorizer execution role
 #################
 resource "aws_iam_role" "authorizer" {
   name = "${var.prefix}-authorizer"
   path = "/"
+  
+  force_detach_policies = true
 
   assume_role_policy = <<EOF
 {
@@ -154,7 +156,40 @@ resource "aws_iam_role_policy" "authorizer" {
     {
       "Action": "lambda:InvokeFunction",
       "Effect": "Allow",
-      "Resource": "${aws_lambda_function.serverless_lambda_3a.arn}"
+      "Resource": [
+        "${aws_lambda_function.serverless_lambda_3a.arn}",
+        "${aws_lambda_function.lambda_signed_url.arn}"
+      ]
+    }
+  ]
+}
+EOF
+}
+#################
+# Lab 4 Signed URL execution role
+#################
+resource "aws_iam_role" "lambda_signed_url" {
+  name = "${var.prefix}-signed-url"
+  assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
+
+  force_detach_policies = true
+}
+resource "aws_iam_role_policy_attachment" "lambda_signed_url" {
+  role       = aws_iam_role.lambda_signed_url.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSLambdaExecute"
+}
+resource "aws_iam_role_policy" "lambda_signed_url" {
+  name = "default"
+  role = aws_iam_role.lambda_signed_url.id
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "S3:PutObject",
+      "Effect": "Allow",
+      "Resource": "*"
     }
   ]
 }
