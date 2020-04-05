@@ -1,0 +1,3 @@
+[submodule "modules/terraform-aws-api-gateway-resource"]
+	path = modules/terraform-aws-api-gateway-resource
+	url = git@github.com:fernanfpinformatica/terraform-aws-api-gateway-resource.git

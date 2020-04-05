@@ -236,25 +236,27 @@ resource "null_resource" "lambda_packager" {
 }
 locals {
   lambda_packages = [
-    fileexists("./docker/lab1/app/Lambda-Deployment.zip") ? null :  "./docker/lab1/app",
-    fileexists("./docker/lab3/app/Lambda-Deployment.zip") ? null :  "./docker/lab3/app"
+    fileexists("./docker/lab1/app/Lambda-Deployment.zip") ? "" :  "./docker/lab1/app",
+    fileexists("./docker/lab3/app/Lambda-Deployment.zip") ? "" :  "./docker/lab3/app",
+    fileexists("./docker/lab3a/app/Lambda-Deployment.zip") ? "" :  "./docker/lab3a/app"
   ]
+  compact_lambda_packages = compact(local.lambda_packages)
 }
 
 resource "docker_container" "lambda_packager" {
-  count = length(compact(local.lambda_packages))
+  count = length(local.compact_lambda_packages)
   image = "lambda_packager"
   name  = "lambda_packager${count.index}"
   mounts {
     type="bind"
-    source=abspath(local.lambda_packages[count.index])
+    source=abspath(local.compact_lambda_packages[count.index])
     target="/app"
   }
   start = true
   depends_on = [null_resource.lambda_packager]
   provisioner "local-exec" {
     command =<<CMD
-until [ -f ${abspath(local.lambda_packages[count.index])}/Lambda-Deployment.zip ] ; do sleep 2; echo zipping; done
+until [ -f ${abspath(local.compact_lambda_packages[count.index])}/Lambda-Deployment.zip ] ; do sleep 2; echo zipping; done
 CMD
   }
 }
@@ -282,6 +284,162 @@ resource "aws_lambda_function" "serverless_lambda_3" {
 
   # Zip is created after first run, so it will be uploaded twice.
   source_code_hash = filebase64sha256( fileexists("./docker/lab3/app/Lambda-Deployment.zip") ? "./docker/lab3/app/Lambda-Deployment.zip" : "./docker/lab3/app/index.js" )
+
+  runtime = "nodejs12.x"
+  timeout = 30
+
+  environment {
+    variables = {
+      AUTH0_DOMAIN = var.AUTH0_DOMAIN
+    }
+  }
+  depends_on = [docker_container.lambda_packager]
+}
+
+# -----------------------------------------------------------------------------
+# Resources: API Gateway
+# -----------------------------------------------------------------------------
+resource "aws_api_gateway_rest_api" "serverless_api" {
+  name = "${var.prefix}-rest-api"
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+}
+module "api_gateway_resource" {
+  source  = "./modules/terraform-aws-api-gateway-resource"
+
+  api = aws_api_gateway_rest_api.serverless_api.id
+  root_resource = aws_api_gateway_rest_api.serverless_api.root_resource_id
+
+  resource = "user-profile"
+  # origin = "https://example.com"
+
+  num_methods = 2
+  methods = [
+    {
+      method = "GET"
+      type = "AWS_PROXY", # Optionally override lambda integration type, defaults to "AWS_PROXY"
+      invoke_arn = aws_lambda_function.serverless_lambda_3.invoke_arn
+      auth = "CUSTOM"
+      auth_id = aws_api_gateway_authorizer.custom_auth.id
+      models = { "application/json" = "Empty" }
+      request_param = { 
+        "method.request.header.authorization" = false
+        "method.request.querystring.accessToken" = false 
+      }
+    },
+    {
+      method = "DELETE"
+      invoke_arn = aws_lambda_function.serverless_lambda_3.invoke_arn
+    }
+  ]
+}
+resource "aws_api_gateway_authorizer" "custom_auth" {
+  name                   = "custom-authorizor"
+  rest_api_id            = aws_api_gateway_rest_api.serverless_api.id
+  authorizer_uri         = aws_lambda_function.serverless_lambda_3a.invoke_arn
+}
+
+resource "aws_api_gateway_deployment" "deploy" {
+  depends_on = [module.api_gateway_resource]
+
+  rest_api_id = aws_api_gateway_rest_api.serverless_api.id
+  stage_name  = "deploy"
+
+}
+
+
+# module "api-gateway-resource" {
+#   source  = "git@github.com:peteroneilljr/terraform-aws-api-gateway-resource.git"
+#   # version = "1.3.2"
+
+#   api_id = aws_api_gateway_rest_api.serverless_api.id
+#   parent_resource_id = aws_api_gateway_rest_api.serverless_api.root_resource_id
+
+#   path_part = "user-profile"
+
+#   methods = [
+#     {
+#       method = "GET"
+#       invoke_arn = aws_lambda_function.serverless_lambda_3.invoke_arn
+#     }
+#   ]
+# }
+
+# module "api_gateway" {
+#   source  = "clouddrove/api-gateway/aws"
+#   version = "0.12.1"
+#   name        = "${var.prefix}-api-gateway"
+#   application = "acg"
+#   environment = "test"
+#   label_order = ["environment", "name", "application"]
+#   enabled     = true
+
+# # Api Gateway Resource
+#   path_parts = ["acg", "user-profile"]
+
+# # Api Gateway Method
+#   method_enabled = true
+#   http_methods   = ["GET", "GET"]
+
+# # Api Gateway Integration
+#   integration_types        = ["MOCK", "AWS_PROXY"]
+#   integration_http_methods = ["OPTIONS", "GET"]
+#   uri                      = ["", aws_lambda_function.serverless_lambda_3.invoke_arn]
+# #   integration_request_parameters = [{}, {}]
+# #   request_templates = [{}, {}]
+
+# # # Api Gateway Method Response
+#   status_codes = [200, 200]
+#   response_models = [{ "application/json" = "Empty" }, { "application/json" = "Empty" }]
+# #   response_parameters = [{ "method.response.header.X-Some-Header" = true }, {}]
+
+# # # Api Gateway Integration Response
+# #   integration_response_parameters = [{ "method.response.header.X-Some-Header" = "integration.response.header.X-Some-Other-Header" }, {}]
+# #   response_templates = [{
+# #     "application/xml" = <<EOF
+# # #set($inputRoot = $input.path('$'))
+# # <?xml version="1.0" encoding="UTF-8"?>
+# # <message>
+# #     $inputRoot.body
+# # </message>
+# # EOF
+# #   }, {}]
+
+# # Api Gateway Deployment
+#   deployment_enabled = true
+#   stage_name         = "deploy"
+
+# # Api Gateway Stage
+#   stage_enabled = true
+#   stage_names   = ["qa", "dev"]
+# }
+
+#################
+# IAM lambda basic role 2
+#################
+resource "aws_iam_role" "lambda_basic_2" {
+  name = "${var.prefix}-basic-role2"
+  assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
+
+  force_detach_policies = true
+}
+resource "aws_iam_role_policy_attachment" "lambda_basic_execute_2" {
+  role       = aws_iam_role.lambda_basic.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSLambdaExecute"
+}
+#################
+# Lambda Function Lab 3a
+#################
+resource "aws_lambda_function" "serverless_lambda_3a" {
+  filename      = "./docker/lab3a/app/Lambda-Deployment.zip"
+  function_name = "${var.prefix}-custom-authorizor"
+  role          = aws_iam_role.lambda_basic.arn
+  handler       = "index.handler"
+
+  # Zip is created after first run, so it will be uploaded twice.
+  source_code_hash = filebase64sha256( fileexists("./docker/lab3a/app/Lambda-Deployment.zip") ? "./docker/lab3a/app/Lambda-Deployment.zip" : "./docker/lab3a/app/index.js" )
 
   runtime = "nodejs12.x"
   timeout = 30
