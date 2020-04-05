@@ -217,7 +217,7 @@ provider "local" {}
 
 resource "local_file" "website_config" {
     content     =  templatefile("./docker/lab2/app/js/config_template.js", { domain = var.AUTH0_DOMAIN, clientId = var.AUTH0_CLIENT_ID })
-    filename = "./docker/lab2/js/config.js"
+    filename = "./docker/lab2/app/js/config.js"
 }
 
 #################
@@ -296,125 +296,6 @@ resource "aws_lambda_function" "serverless_lambda_3" {
   depends_on = [docker_container.lambda_packager]
 }
 
-# -----------------------------------------------------------------------------
-# Resources: API Gateway
-# -----------------------------------------------------------------------------
-resource "aws_api_gateway_rest_api" "serverless_api" {
-  name = "${var.prefix}-rest-api"
-
-  endpoint_configuration {
-    types = ["REGIONAL"]
-  }
-}
-module "api_gateway_resource" {
-  source  = "./modules/terraform-aws-api-gateway-resource"
-
-  api = aws_api_gateway_rest_api.serverless_api.id
-  root_resource = aws_api_gateway_rest_api.serverless_api.root_resource_id
-
-  resource = "user-profile"
-  # origin = "https://example.com"
-
-  num_methods = 2
-  methods = [
-    {
-      method = "GET"
-      type = "AWS_PROXY", # Optionally override lambda integration type, defaults to "AWS_PROXY"
-      invoke_arn = aws_lambda_function.serverless_lambda_3.invoke_arn
-      auth = "CUSTOM"
-      auth_id = aws_api_gateway_authorizer.custom_auth.id
-      models = { "application/json" = "Empty" }
-      request_param = { 
-        "method.request.header.authorization" = false
-        "method.request.querystring.accessToken" = false 
-      }
-    },
-    {
-      method = "DELETE"
-      invoke_arn = aws_lambda_function.serverless_lambda_3.invoke_arn
-    }
-  ]
-}
-resource "aws_api_gateway_authorizer" "custom_auth" {
-  name                   = "custom-authorizor"
-  rest_api_id            = aws_api_gateway_rest_api.serverless_api.id
-  authorizer_uri         = aws_lambda_function.serverless_lambda_3a.invoke_arn
-}
-
-resource "aws_api_gateway_deployment" "deploy" {
-  depends_on = [module.api_gateway_resource]
-
-  rest_api_id = aws_api_gateway_rest_api.serverless_api.id
-  stage_name  = "deploy"
-
-}
-
-
-# module "api-gateway-resource" {
-#   source  = "git@github.com:peteroneilljr/terraform-aws-api-gateway-resource.git"
-#   # version = "1.3.2"
-
-#   api_id = aws_api_gateway_rest_api.serverless_api.id
-#   parent_resource_id = aws_api_gateway_rest_api.serverless_api.root_resource_id
-
-#   path_part = "user-profile"
-
-#   methods = [
-#     {
-#       method = "GET"
-#       invoke_arn = aws_lambda_function.serverless_lambda_3.invoke_arn
-#     }
-#   ]
-# }
-
-# module "api_gateway" {
-#   source  = "clouddrove/api-gateway/aws"
-#   version = "0.12.1"
-#   name        = "${var.prefix}-api-gateway"
-#   application = "acg"
-#   environment = "test"
-#   label_order = ["environment", "name", "application"]
-#   enabled     = true
-
-# # Api Gateway Resource
-#   path_parts = ["acg", "user-profile"]
-
-# # Api Gateway Method
-#   method_enabled = true
-#   http_methods   = ["GET", "GET"]
-
-# # Api Gateway Integration
-#   integration_types        = ["MOCK", "AWS_PROXY"]
-#   integration_http_methods = ["OPTIONS", "GET"]
-#   uri                      = ["", aws_lambda_function.serverless_lambda_3.invoke_arn]
-# #   integration_request_parameters = [{}, {}]
-# #   request_templates = [{}, {}]
-
-# # # Api Gateway Method Response
-#   status_codes = [200, 200]
-#   response_models = [{ "application/json" = "Empty" }, { "application/json" = "Empty" }]
-# #   response_parameters = [{ "method.response.header.X-Some-Header" = true }, {}]
-
-# # # Api Gateway Integration Response
-# #   integration_response_parameters = [{ "method.response.header.X-Some-Header" = "integration.response.header.X-Some-Other-Header" }, {}]
-# #   response_templates = [{
-# #     "application/xml" = <<EOF
-# # #set($inputRoot = $input.path('$'))
-# # <?xml version="1.0" encoding="UTF-8"?>
-# # <message>
-# #     $inputRoot.body
-# # </message>
-# # EOF
-# #   }, {}]
-
-# # Api Gateway Deployment
-#   deployment_enabled = true
-#   stage_name         = "deploy"
-
-# # Api Gateway Stage
-#   stage_enabled = true
-#   stage_names   = ["qa", "dev"]
-# }
 
 #################
 # IAM lambda basic role 2
@@ -430,8 +311,54 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execute_2" {
   policy_arn = "arn:aws:iam::aws:policy/AWSLambdaExecute"
 }
 #################
-# Lambda Function Lab 3a
+# Authorizor
 #################
+resource "aws_iam_role" "authorizer" {
+  name = "${var.prefix}-authorizer"
+  path = "/"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "apigateway.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_role_policy" "authorizer" {
+  name = "default"
+  role = aws_iam_role.authorizer.id
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "lambda:InvokeFunction",
+      "Effect": "Allow",
+      "Resource": "${aws_lambda_function.serverless_lambda_3a.arn}"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_api_gateway_authorizer" "custom_auth" {
+  name                   = "custom-auth"
+  rest_api_id            = aws_api_gateway_rest_api.serverless_api.id
+  authorizer_uri         = aws_lambda_function.serverless_lambda_3a.invoke_arn
+  authorizer_credentials = aws_iam_role.authorizer.arn
+}
+
 resource "aws_lambda_function" "serverless_lambda_3a" {
   filename      = "./docker/lab3a/app/Lambda-Deployment.zip"
   function_name = "${var.prefix}-custom-authorizor"
@@ -450,4 +377,11 @@ resource "aws_lambda_function" "serverless_lambda_3a" {
     }
   }
   depends_on = [docker_container.lambda_packager]
+}
+#################
+# Lab 3b
+#################
+resource "local_file" "website_config_3" {
+    content     =  templatefile("./docker/lab3b/app/js/config_template.js", { domain = var.AUTH0_DOMAIN, clientId = var.AUTH0_CLIENT_ID, apiBaseUrl = aws_api_gateway_deployment.deploy.invoke_url })
+    filename = "./docker/lab3b/app/js/config.js"
 }
