@@ -80,7 +80,7 @@ resource "aws_lambda_function" "transcode_video" {
     variables = {
       ELASTIC_TRANSCODER_REGION = var.region
       ELASTIC_TRANSCODER_PIPELINE_ID = aws_elastictranscoder_pipeline.serverless.id
-      DATABASE_URL = "https://acg-video-3ebe4.firebaseio.com/"
+      DATABASE_URL = var.FIREBASE_URL
     }
   }
   depends_on = [docker_container.lambda_packager]
@@ -89,19 +89,21 @@ resource "aws_lambda_function" "transcode_video" {
 #################
 # Lambda Function Lab 3
 #################
-resource "aws_lambda_permission" "allow_apigw_lambda" {
+locals {
+  user_profile_name = "user-profile"
+}
+resource "aws_lambda_permission" "user_profile" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.serverless_lambda_3.function_name
+  function_name = aws_lambda_function.user_profile.function_name
   principal     = "apigateway.amazonaws.com"
 
   # More: http://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-control-access-using-iam-policies-to-invoke-api.html
-  source_arn = "${aws_api_gateway_rest_api.serverless_api.execution_arn}/*/*/*"
+  source_arn = "${aws_api_gateway_rest_api.serverless_api.execution_arn}/*/GET/${local.user_profile_name}"
 }
-
-resource "aws_lambda_function" "serverless_lambda_3" {
+resource "aws_lambda_function" "user_profile" {
   filename      = "./docker/lab3/app/Lambda-Deployment.zip"
-  function_name = "${var.prefix}-user-profile"
+  function_name = "${var.prefix}-${local.user_profile_name}"
   role          = aws_iam_role.lambda_basic.arn
   handler       = "index.handler"
 
@@ -121,9 +123,13 @@ resource "aws_lambda_function" "serverless_lambda_3" {
 #################
 # Customer Authorizer
 #################
-resource "aws_lambda_function" "serverless_lambda_3a" {
+locals {
+  custom_authorizer_name = "custom-authorizer"
+}
+
+resource "aws_lambda_function" "custom_authorizer" {
   filename      = "./docker/lab3a/app/Lambda-Deployment.zip"
-  function_name = "${var.prefix}-custom-authorizor"
+  function_name = "${var.prefix}-${local.custom_authorizer_name}"
   role          = aws_iam_role.lambda_basic.arn
   handler       = "index.handler"
 
@@ -143,19 +149,22 @@ resource "aws_lambda_function" "serverless_lambda_3a" {
 #################
 # Lambda Function Lab 4
 #################
-resource "aws_lambda_permission" "lambda_signed_url" {
+locals {
+  s3_upload_link_name = "s3-upload-link"
+}
+resource "aws_lambda_permission" "s3_upload_link" {
   statement_id  = "AllowExecutionFromAPIGatewaySignedURL"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.lambda_signed_url.function_name
+  function_name = aws_lambda_function.s3_upload_link.function_name
   principal     = "apigateway.amazonaws.com"
 
-  source_arn = "${aws_api_gateway_rest_api.serverless_api.execution_arn}/*/*/*"
+  source_arn = "${aws_api_gateway_rest_api.serverless_api.execution_arn}/*/GET/${local.s3_upload_link_name}"
 }
 
-resource "aws_lambda_function" "lambda_signed_url" {
+resource "aws_lambda_function" "s3_upload_link" {
   filename      = "./docker/lab4/app/Lambda-Deployment.zip"
-  function_name = "${var.prefix}-presigned-url"
-  role          = aws_iam_role.lambda_signed_url.arn
+  function_name = "${var.prefix}-${local.s3_upload_link_name}"
+  role          = aws_iam_role.s3_upload_link.arn
   handler       = "index.handler"
 
   # Zip is created after first run, so it will be uploaded twice.
@@ -206,7 +215,7 @@ resource "aws_lambda_function" "push_to_firebase" {
 
   environment {
     variables = {
-      DATABASE_URL = "https://acg-video-3ebe4.firebaseio.com/"
+      DATABASE_URL = var.FIREBASE_URL
       S3_TRANSCODED_BUCKET_URL = "https://${aws_s3_bucket.serverless_transcode.bucket}.s3.amazonaws.com" 
     }
   }

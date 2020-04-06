@@ -157,8 +157,8 @@ resource "aws_iam_role_policy" "authorizer" {
       "Action": "lambda:InvokeFunction",
       "Effect": "Allow",
       "Resource": [
-        "${aws_lambda_function.serverless_lambda_3a.arn}",
-        "${aws_lambda_function.lambda_signed_url.arn}"
+        "${aws_lambda_function.custom_authorizer.arn}",
+        "${aws_lambda_function.s3_upload_link.arn}"
       ]
     }
   ]
@@ -168,30 +168,34 @@ EOF
 #################
 # Lab 4 Signed URL execution role
 #################
-resource "aws_iam_role" "lambda_signed_url" {
+resource "aws_iam_role" "s3_upload_link" {
   name = "${var.prefix}-signed-url"
   assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
 
   force_detach_policies = true
 }
-resource "aws_iam_role_policy_attachment" "lambda_signed_url" {
-  role       = aws_iam_role.lambda_signed_url.name
+resource "aws_iam_role_policy_attachment" "s3_upload_link" {
+  role       = aws_iam_role.s3_upload_link.name
   policy_arn = "arn:aws:iam::aws:policy/AWSLambdaExecute"
 }
-resource "aws_iam_role_policy" "lambda_signed_url" {
+resource "aws_iam_role_policy" "s3_upload_link" {
   name = "default"
-  role = aws_iam_role.lambda_signed_url.id
+  role = aws_iam_role.s3_upload_link.id
 
-  policy = <<EOF
+  policy = <<POLICY
 {
+  "Id": "Policy1586145854688",
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Action": "S3:PutObject",
+      "Sid": "Stmt1586145679558",
+      "Action": [
+        "s3:PutObject"
+      ],
       "Effect": "Allow",
-      "Resource": "*"
+      "Resource": "${aws_s3_bucket.serverless_upload.arn}/*"
     }
   ]
 }
-EOF
+POLICY
 }

@@ -62,18 +62,7 @@ var videoController = {
     connectToFirebase: function () {
         var that = this;
 
-        var firebaseConfig = {
-            apiKey: "AIzaSyBAmdXucUmItEx22n8NcsCiRNHNdBpLhzU",
-            authDomain: "acg-video-3ebe4.firebaseapp.com",
-            databaseURL: "https://acg-video-3ebe4.firebaseio.com",
-            projectId: "acg-video-3ebe4",
-            storageBucket: "acg-video-3ebe4.appspot.com",
-            messagingSenderId: "941269697912",
-            appId: "1:941269697912:web:51b258d64ec7144dd2748d"
-          };
-
-
-        firebase.initializeApp(firebaseConfig);
+${ FIREBASE_AUTH }
 
         var firebaseRef = firebase.database().ref();
 
