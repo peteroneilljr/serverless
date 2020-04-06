@@ -56,7 +56,9 @@ resource "aws_s3_bucket_public_access_block" "serverless_transcode" {
   ignore_public_acls = true
   block_public_policy = false
   restrict_public_buckets = false
+
 }
+
 resource "aws_s3_bucket_policy" "serverless_transcode" {
   bucket = aws_s3_bucket.serverless_transcode.id
 
@@ -74,6 +76,12 @@ resource "aws_s3_bucket_policy" "serverless_transcode" {
 	]
 }
 POLICY
+  depends_on = [aws_s3_bucket_public_access_block.serverless_transcode]
+  provisioner "local-exec" {
+    when = destroy
+    # Collides with S3 bucket deletion
+    command = "sleep 10"
+  }
 }
 
 #################
@@ -179,16 +187,22 @@ resource "aws_s3_bucket_policy" "host_site" {
 	]
 }
 POLICY
+  depends_on = [aws_s3_bucket_public_access_block.host_site]
+  provisioner "local-exec" {
+    when = destroy
+    # Collides with S3 bucket deletion
+    command = "sleep 10"
+  }
 }
 resource "null_resource" "sync_host_site" {
   triggers = {
-    firebase_config = fileexists("./docker/lab5/app/js/video-controller.js") ? filesha1("./docker/lab5/app/js/video-controller.js") : null
-    auth0_config = fileexists("./docker/lab5/app/js/config.js") ? filesha1("./docker/lab5/app/js/config.js") : null
+    firebase_config = sha1(local_file.firebase_config.content)
+    auth0_config = sha1(local_file.auth0_config.content)
   }
   provisioner "local-exec" {
     command = "aws s3 sync ${abspath("./docker/lab5/app")} s3://${aws_s3_bucket.host_site.id} --profile personal"
   }
-  depends_on = [local_file.firebase_config, local_file.auth0_config]
+  # depends_on = [local_file.firebase_config, local_file.auth0_config]
 }
 
 output "website_url" {
